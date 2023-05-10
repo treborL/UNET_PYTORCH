@@ -24,9 +24,6 @@ def up_conv(in_channels, out_channels):
 
 
 class VGGUnet(nn.Module):
-    """Unet with VGG-16 (with BN) encoder.
-    """
-
     def __init__(self, encoder, *, pretrained=False, out_channels=2):
         super().__init__()
         self.n_channels = 3
@@ -55,7 +52,7 @@ class VGGUnet(nn.Module):
         self.conv10 = double_conv(32 + 64, 32)
         self.conv11 = nn.Conv2d(32, out_channels, kernel_size=1)
 
-        self.frozen_layers = [self.block1, self.block2, self.block3, self.block4]
+        self.frozen_layers = [self.block1, self.block2, self.block3, self.block4, self.block5]
         for l in self.frozen_layers:
             l.requires_grad_(False)
 
@@ -93,6 +90,9 @@ class VGGUnet(nn.Module):
 
         return x
 
+    def unfreeze_pretrained(self):
+        for l in self.frozen_layers:
+            l.requires_grad_(True)
 
 def vgg16bn_unet(output_dim: int=2, pretrained: bool=False):
     return VGGUnet(vgg16_bn, pretrained=pretrained, out_channels=output_dim)

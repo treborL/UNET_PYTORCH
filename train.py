@@ -13,6 +13,7 @@ from p_utils.data_loader import CustomDataloader
 from p_utils.dice_score import dice_loss
 from p_utils.evaluate import evaluate
 from torch.autograd import Variable
+from p_utils.fine_tune import fine_tune_model
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='VGG16_Unet')
@@ -43,6 +44,12 @@ if __name__ == '__main__':
                         default="./dataset/groundtruth/", help='path to ground truth masks')
     parser.add_argument('--mask_suf', metavar='Masks suffix', dest='mask_suff', type=str,
                         default='_mask', help='masks suffix')
+
+    parser.add_argument('--ft_img', metavar='Fine tune images directory', dest='ft_img', type=str,
+                        default="./dataset/fine_tune_input/",
+                        help='fine tune images directory')
+    parser.add_argument('--ft_mask', metavar='Fine tune masks directory', dest='ft_mask', type=str,
+                        default="./dataset/fine_tune_groundtruth/", help='path to ground fine tune truth masks')
 
     # Optimization
     parser.add_argument('--lr', metavar='Learning Rate', dest='lr', type=float, default=1e-5,
@@ -80,10 +87,10 @@ if __name__ == '__main__':
     num_classes = args.num_c
 
     if not os.path.exists(dir_img):
-        print(dir_img + " doesn't exists") # TODO
+        print(dir_img + " doesn't exists")  # TODO
 
     if not os.path.exists(dir_mask):
-        print(dir_mask + " doesn't exists") # TODO
+        print(dir_mask + " doesn't exists")  # TODO
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -93,7 +100,7 @@ if __name__ == '__main__':
     dataset = CustomDataloader(dir_img, dir_mask, mask_suffix=mask_suff)
 
     # Dataset split into train and validation
-    validation_count = int(len(dataset) * (val_percent/100.))
+    validation_count = int(len(dataset) * (val_percent / 100.))
     train_count = len(dataset) - validation_count
     train_set, val_set = random_split(dataset, [train_count, validation_count],
                                       generator=torch.Generator().manual_seed(0))
@@ -116,7 +123,6 @@ if __name__ == '__main__':
         optimizer = optim.RMSprop(model.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.999)
     else:
         raise f"Optimizer = {opt}, possible optimizers: adam, sgd, rmsprop."
-
 
     # Learning rate scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5)
@@ -179,6 +185,13 @@ if __name__ == '__main__':
             state_dict = model.state_dict()
             torch.save(state_dict, str(checkpoint_dir + 'checkpoint_epoch{}.pth'.format(epoch)))
             logging.info(f'Checkpoint {epoch} saved!')
+
+    model = fine_tune_model(model=model, ft_img=args.ft_img, ft_mask=args.ft_mask, mask_suff=mask_suff,
+                            val_percent=val_percent,
+                            batch_size=batch_size, device=device, opt=opt, lr=lr / 1000, weight_decay=weight_decay,
+                            amp=amp,
+                            num_classes=num_classes, num_epochs=num_epochs, gradient_clipping=gradient_clipping,
+                            checkpoint=checkpoint, checkpoint_dir=checkpoint_dir)
 
     # SAVE MODEL IN ONNX
     dummy_input = Variable(torch.randn(1, 3, 192, 640, device=device))
