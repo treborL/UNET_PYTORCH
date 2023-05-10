@@ -24,7 +24,7 @@ def up_conv(in_channels, out_channels):
 
 
 class VGGUnet(nn.Module):
-    """Unet with VGG-13 (with BN), VGG-16 (with BN) encoder.
+    """Unet with VGG-16 (with BN) encoder.
     """
 
     def __init__(self, encoder, *, pretrained=False, out_channels=2):
@@ -33,6 +33,7 @@ class VGGUnet(nn.Module):
         self.n_classes = out_channels
 
         self.encoder = encoder(weights=torchvision.models.VGG16_BN_Weights.DEFAULT if pretrained else None).features
+
         self.block1 = nn.Sequential(*self.encoder[:6])
         self.block2 = nn.Sequential(*self.encoder[6:13])
         self.block3 = nn.Sequential(*self.encoder[13:20])
@@ -53,6 +54,10 @@ class VGGUnet(nn.Module):
         self.up_conv10 = up_conv(64, 32)
         self.conv10 = double_conv(32 + 64, 32)
         self.conv11 = nn.Conv2d(32, out_channels, kernel_size=1)
+
+        self.frozen_layers = [self.block1, self.block2, self.block3, self.block4]
+        for l in self.frozen_layers:
+            l.requires_grad_(False)
 
     def forward(self, x):
         block1 = self.block1(x)

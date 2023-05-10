@@ -11,21 +11,27 @@ from os.path import splitext, isfile, join
 from pathlib import Path
 from torch.utils.data import Dataset
 from tqdm import tqdm
+import albumentations as A
+import cv2 as cv
+
+transforms = A.Compose([
+    A.PixelDropout(dropout_prob=0.02, drop_value=255),
+    A.HorizontalFlip(),
+    A.VerticalFlip(),
+    A.GaussNoise(var_limit=255, p=0.25),
+    A.CoarseDropout(min_holes=8, max_holes=16, max_height=20,
+                    max_width=32, min_height=10, min_width=16, mask_fill_value=0),
+    A.ColorJitter()
+])
 
 
 def load_image(filename):
-    ext = splitext(filename)[1]
-    if ext == '.npy':
-        return Image.fromarray(np.load(filename))
-    elif ext in ['.pt', '.pth']:
-        return Image.fromarray(torch.load(filename).numpy())
-    else:
-        return Image.open(filename)
+    return cv.imread(str(filename))
 
 
 def unique_mask_values(idx, mask_dir, mask_suffix):
     mask_file = list(mask_dir.glob(idx + mask_suffix + '.*'))[0]
-    mask = np.asarray(load_image(mask_file))
+    mask = load_image(mask_file)
     if mask.ndim == 2:
         return np.unique(mask)
     elif mask.ndim == 3:
@@ -48,11 +54,11 @@ class CustomDataloader(Dataset):
         logging.info(f'Creating dataset with {len(self.ids)} examples')
         logging.info('Scanning mask files to determine unique values')
 
-        with Pool() as p:
-            unique = list(tqdm(
-                p.imap(partial(unique_mask_values, mask_dir=self.mask_dir, mask_suffix=self.mask_suffix), self.ids),
-                total=len(self.ids)
-            ))
+        #with Pool() as p:
+        #    unique = list(tqdm(
+        #        p.imap(partial(unique_mask_values, mask_dir=self.mask_dir, mask_suffix=self.mask_suffix), self.ids),
+        #        total=len(self.ids)
+        #    ))
 
         self.mask_values = [0, 255] # list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
         logging.info(f'Unique mask values: {self.mask_values}')
@@ -61,15 +67,18 @@ class CustomDataloader(Dataset):
         return len(self.ids)
 
     @staticmethod
-    def preprocess(mask_values, pil_img, is_mask, scale=1):
-        w, h = pil_img.size
-        newW, newH = int(scale * w), int(scale * h)
-        assert newW > 0 and newH > 0, 'Scale is too small, resized images would have no pixel'
-        pil_img = pil_img.resize((newW, newH), resample=Image.NEAREST if is_mask else Image.BICUBIC)
-        img = np.asarray(pil_img)
+    def preprocess(mask_values, np_img, is_mask, scale=1):
+        w = np_img.shape[1]
+        h = np_img.shape[0]
+
+        #newW, newH = int(scale * w), int(scale * h)
+        #assert newW > 0 and newH > 0, 'Scale is too small, resized images would have no pixel'
+        #pil_img = pil_img.resize((newW, newH), resample=Image.NEAREST if is_mask else Image.BICUBIC)
+        #img = np.asarray(pil_img)
+        img = np_img
 
         if is_mask:
-            mask = np.zeros((newH, newW), dtype=np.int64)
+            mask = np.zeros((h, w), dtype=np.int64)
             for i, v in enumerate(mask_values):
                 if img.ndim == 2:
                     mask[img == v] = i
@@ -96,11 +105,17 @@ class CustomDataloader(Dataset):
 
         assert len(img_file) == 1, f'Either no image or multiple images found for the ID {name}: {img_file}'
         assert len(mask_file) == 1, f'Either no mask or multiple masks found for the ID {name}: {mask_file}'
+
         mask = load_image(mask_file[0])
         img = load_image(img_file[0])
 
         assert img.size == mask.size, \
             f'Image and mask {name} should be the same size, but are {img.size} and {mask.size}'
+
+        transformed = transforms(image=img, mask=mask)
+
+        img = transformed['image']
+        mask = transformed['mask']
 
         img = self.preprocess(self.mask_values, img, is_mask=False)
         mask = self.preprocess(self.mask_values, mask, is_mask=True)
