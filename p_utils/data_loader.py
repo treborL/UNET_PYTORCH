@@ -60,7 +60,7 @@ class CustomDataloader(Dataset):
         #        total=len(self.ids)
         #    ))
 
-        self.mask_values = [0, 255] # list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
+        self.mask_values = [0, 1, 2] # list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
         logging.info(f'Unique mask values: {self.mask_values}')
 
     def __len__(self):

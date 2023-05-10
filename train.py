@@ -188,7 +188,7 @@ if __name__ == '__main__':
 
     model = fine_tune_model(model=model, ft_img=args.ft_img, ft_mask=args.ft_mask, mask_suff=mask_suff,
                             val_percent=val_percent,
-                            batch_size=batch_size, device=device, opt=opt, lr=lr / 1000, weight_decay=weight_decay,
+                            batch_size=batch_size, device=device, opt=opt, lr=lr / 100000, weight_decay=weight_decay,
                             amp=amp,
                             num_classes=num_classes, num_epochs=num_epochs, gradient_clipping=gradient_clipping,
                             checkpoint=checkpoint, checkpoint_dir=checkpoint_dir)
@@ -198,7 +198,7 @@ if __name__ == '__main__':
 
     torch.onnx.export(model,  # model being run
                       dummy_input,  # model input (or a tuple for multiple inputs)
-                      "vgg_unet_rob.onnx",  # where to save the model (can be a file or file-like object)
+                      "bottles.onnx",  # where to save the model (can be a file or file-like object)
                       export_params=True,  # store the trained parameter weights inside the model file
                       opset_version=17,  # the ONNX version to export the model to
                       do_constant_folding=True,  # whether to execute constant folding for optimization
