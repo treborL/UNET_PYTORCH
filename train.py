@@ -37,12 +37,12 @@ if __name__ == '__main__':
                         help='percent of images to use as validation in range [0, 100]')
 
     # Paths
-    parser.add_argument('--dir_img', metavar='Images directory', dest='dir_img', type=str, default="/dataset/input/",
+    parser.add_argument('--dir_img', metavar='Images directory', dest='dir_img', type=str, default="./dataset/input/",
                         help='path to input images')
     parser.add_argument('--dir_mask', metavar='Masks directory', dest='dir_mask', type=str,
-                        default="/dataset/groundtruth/", help='path to ground truth masks')
+                        default="./dataset/groundtruth/", help='path to ground truth masks')
     parser.add_argument('--mask_suf', metavar='Masks suffix', dest='mask_suff', type=str,
-                        default='', help='masks suffix')
+                        default='_mask', help='masks suffix')
 
     # Optimization
     parser.add_argument('--lr', metavar='Learning Rate', dest='lr', type=float, default=1e-5,

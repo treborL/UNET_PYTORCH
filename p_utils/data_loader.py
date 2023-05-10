@@ -36,7 +36,7 @@ def unique_mask_values(idx, mask_dir, mask_suffix):
 
 
 class CustomDataloader(Dataset):
-    def __init__(self, images_dir: str, mask_dir: str, mask_suffix: str = ''):
+    def __init__(self, images_dir: str, mask_dir: str, mask_suffix: str = '_mask'):
         self.images_dir = Path(images_dir)
         self.mask_dir = Path(mask_dir)
         self.mask_suffix = mask_suffix
@@ -47,13 +47,14 @@ class CustomDataloader(Dataset):
 
         logging.info(f'Creating dataset with {len(self.ids)} examples')
         logging.info('Scanning mask files to determine unique values')
+
         with Pool() as p:
             unique = list(tqdm(
                 p.imap(partial(unique_mask_values, mask_dir=self.mask_dir, mask_suffix=self.mask_suffix), self.ids),
                 total=len(self.ids)
             ))
 
-        self.mask_values = list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
+        self.mask_values = [0, 255] # list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
         logging.info(f'Unique mask values: {self.mask_values}')
 
     def __len__(self):
