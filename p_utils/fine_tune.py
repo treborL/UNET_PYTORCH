@@ -9,17 +9,15 @@ from torch import optim
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
-import vgg_unet
-from vgg_unet import vgg16bn_unet
 from p_utils.data_loader import CustomDataloader
 from p_utils.dice_score import dice_loss
 from p_utils.evaluate import evaluate
 from torch.autograd import Variable
 
 
-def fine_tune_model(model: vgg_unet.VGGUnet, ft_img: str, ft_mask: str, mask_suff: str, val_percent: float,
-                    batch_size: int, device: torch.device, opt: str, lr: float, weight_decay: float, amp: bool,
-                    num_classes: int, num_epochs: int, gradient_clipping: float, checkpoint: bool, checkpoint_dir: str):
+def fine_tune_model(model, ft_img: str, ft_mask: str, mask_suff: str, val_percent: float,
+                    batch_size: int, device: torch.device, amp: bool, num_epochs: int, gradient_clipping: float,
+                    checkpoint: bool, checkpoint_dir: str, loss_function, optimizer, grad_scaler, scheduler):
 
     model.unfreeze_pretrained()
 
@@ -36,26 +34,10 @@ def fine_tune_model(model: vgg_unet.VGGUnet, ft_img: str, ft_mask: str, mask_suf
     train_loader = DataLoader(train_set, shuffle=True, **loader_args)
     val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
 
-    # Setup optimizer
-    if opt == "adam":
-        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif opt == "sgd":
-        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0001)
-    elif opt == "rmsprop":
-        optimizer = optim.RMSprop(model.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.999)
-    else:
-        raise f"Optimizer = {opt}, possible optimizers: adam, sgd, rmsprop."
-
-    # Learning rate scheduler
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5)
-
-    grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
-
-    loss_function = nn.CrossEntropyLoss() if num_classes > 1 else nn.BCEWithLogitsLoss()
-
     global_step = 0
 
     print("STARTING FINE TUNING MODEL")
+
     # Training
     for epoch in range(1, num_epochs + 1):
         model.train()

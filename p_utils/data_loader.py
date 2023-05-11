@@ -47,21 +47,21 @@ class CustomDataloader(Dataset):
         self.mask_dir = Path(mask_dir)
         self.mask_suffix = mask_suffix
 
-        self.ids = [splitext(file)[0] for file in listdir(images_dir) if isfile(join(images_dir, file)) and not file.startswith('.')]
+        self.ids = [splitext(file)[0] for file in listdir(images_dir) if
+                    isfile(join(images_dir, file)) and not file.startswith('.')]
         if not self.ids:
             raise RuntimeError(f'No input file found in {images_dir}, make sure you put your images there')
 
         logging.info(f'Creating dataset with {len(self.ids)} examples')
         logging.info('Scanning mask files to determine unique values')
 
-
         with Pool() as p:
             unique = list(tqdm(
-               p.imap(partial(unique_mask_values, mask_dir=self.mask_dir, mask_suffix=self.mask_suffix), self.ids),
+                p.imap(partial(unique_mask_values, mask_dir=self.mask_dir, mask_suffix=self.mask_suffix), self.ids),
                 total=len(self.ids)
             ))
 
-        self.mask_values = list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))[1:]
+        self.mask_values = list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
         logging.info(f'Unique mask values: {self.mask_values}')
 
     def __len__(self):
@@ -72,10 +72,10 @@ class CustomDataloader(Dataset):
         w = np_img.shape[1]
         h = np_img.shape[0]
 
-        #newW, newH = int(scale * w), int(scale * h)
-        #assert newW > 0 and newH > 0, 'Scale is too small, resized images would have no pixel'
-        #pil_img = pil_img.resize((newW, newH), resample=Image.NEAREST if is_mask else Image.BICUBIC)
-        #img = np.asarray(pil_img)
+        # newW, newH = int(scale * w), int(scale * h)
+        # assert newW > 0 and newH > 0, 'Scale is too small, resized images would have no pixel'
+        # pil_img = pil_img.resize((newW, newH), resample=Image.NEAREST if is_mask else Image.BICUBIC)
+        # img = np.asarray(pil_img)
         img = np_img
 
         if is_mask:

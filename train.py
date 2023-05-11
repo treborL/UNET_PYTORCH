@@ -8,7 +8,7 @@ from pathlib import Path
 from torch import optim
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
-from vgg_unet import vgg16bn_unet
+from resnet_unet import resnet_unet
 from p_utils.data_loader import CustomDataloader
 from p_utils.dice_score import dice_loss
 from p_utils.evaluate import evaluate
@@ -52,7 +52,7 @@ if __name__ == '__main__':
                         default="./dataset/fine_tune_groundtruth/", help='path to ground fine tune truth masks')
 
     # Optimization
-    parser.add_argument('--lr', metavar='Learning Rate', dest='lr', type=float, default=1e-5,
+    parser.add_argument('--lr', metavar='Learning Rate', dest='lr', type=float, default=1e-3,
                         help='learning rate of the optimization')
     parser.add_argument('--weight_decay', metavar='weight_decay', dest='weight_decay', type=float, default=1e-8,
                         help='weight decay of the optimization')
@@ -106,12 +106,12 @@ if __name__ == '__main__':
                                       generator=torch.Generator().manual_seed(0))
 
     # Data loaders
-    loader_args = dict(batch_size=batch_size, num_workers=os.cpu_count(), pin_memory=True)
+    loader_args = dict(batch_size=batch_size, num_workers=4, pin_memory=True)
     train_loader = DataLoader(train_set, shuffle=True, **loader_args)
     val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
 
     # Create model
-    model = vgg16bn_unet(num_classes, pretrained=True)
+    model = resnet_unet(num_classes, pretrained=True)
     model.to(device=device, memory_format=torch.channels_last)
 
     # Setup optimizer
@@ -180,18 +180,19 @@ if __name__ == '__main__':
                         scheduler.step(val_score)
                         logging.info('Validation Dice score: {}'.format(val_score))
 
-        if checkpoint:
+        if checkpoint and epoch % 10 == 0:
             Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
             state_dict = model.state_dict()
             torch.save(state_dict, str(checkpoint_dir + 'checkpoint_epoch{}.pth'.format(epoch)))
             logging.info(f'Checkpoint {epoch} saved!')
 
+    # FINE TUNE
     model = fine_tune_model(model=model, ft_img=args.ft_img, ft_mask=args.ft_mask, mask_suff=mask_suff,
                             val_percent=val_percent,
-                            batch_size=batch_size, device=device, opt=opt, lr=lr / 100000, weight_decay=weight_decay,
-                            amp=amp,
-                            num_classes=num_classes, num_epochs=num_epochs, gradient_clipping=gradient_clipping,
-                            checkpoint=checkpoint, checkpoint_dir=checkpoint_dir)
+                            batch_size=batch_size, device=device, amp=amp, num_epochs=num_epochs,
+                            gradient_clipping=gradient_clipping, checkpoint=checkpoint, checkpoint_dir=checkpoint_dir,
+                            loss_function=loss_function, optimizer=optimizer, grad_scaler=grad_scaler,
+                            scheduler=scheduler)
 
     # SAVE MODEL IN ONNX
     dummy_input = Variable(torch.randn(1, 3, 192, 640, device=device))
