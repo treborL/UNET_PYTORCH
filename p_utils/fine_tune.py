@@ -9,12 +9,11 @@ from torch import optim
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
-from p_utils.data_loader import CustomDataloader
 from p_utils.dice_score import dice_loss
 from p_utils.evaluate import evaluate
 from torch.autograd import Variable
 
-
+'''
 def fine_tune_model(model, ft_img: str, ft_mask: str, mask_suff: str, val_percent: float,
                     batch_size: int, device: torch.device, amp: bool, num_epochs: int, gradient_clipping: float,
                     checkpoint: bool, checkpoint_dir: str, loss_function, optimizer, grad_scaler, scheduler):
@@ -88,5 +87,4 @@ def fine_tune_model(model, ft_img: str, ft_mask: str, mask_suff: str, val_percen
             state_dict = model.state_dict()
             torch.save(state_dict, str(checkpoint_dir + 'checkpoint_epoch{}_fine_tune.pth'.format(epoch)))
             logging.info(f'Checkpoint {epoch} saved!')
-
-    return model
+'''

@@ -6,14 +6,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
 from torch import optim
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 from resnet_unet import resnet_unet
-from p_utils.data_loader import CustomDataloader
 from p_utils.dice_score import dice_loss
 from p_utils.evaluate import evaluate
 from torch.autograd import Variable
-from p_utils.fine_tune import fine_tune_model
+from unet.unet_model import UNet
+from p_utils.my_dataloader import create_train_val_datasets
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='VGG16_Unet')
@@ -80,6 +81,8 @@ if __name__ == '__main__':
 
     dir_img = args.dir_img
     dir_mask = args.dir_mask
+    ft_img = args.ft_img
+    ft_mask = args.ft_mask
     mask_suff = args.mask_suff
     val_percent = args.val_perc
     gradient_clipping = 1.0
@@ -97,21 +100,17 @@ if __name__ == '__main__':
     print(f"Training params: \nLearning rate: {lr},\nWeight decay: {weight_decay},\nNumber of epochs: {num_epochs},"
           f"\nBatch size: {batch_size},\nOptimizer: {opt}")
 
-    dataset = CustomDataloader(dir_img, dir_mask, mask_suffix=mask_suff)
-
-    # Dataset split into train and validation
-    validation_count = int(len(dataset) * (val_percent / 100.))
-    train_count = len(dataset) - validation_count
-    train_set, val_set = random_split(dataset, [train_count, validation_count],
-                                      generator=torch.Generator().manual_seed(0))
+    train_set, val_set = create_train_val_datasets(img_dir=dir_img, mask_dir=dir_mask,
+                                                   val_percent=val_percent, mask_suf=mask_suff)
+    train_count = len(train_set)
 
     # Data loaders
-    loader_args = dict(batch_size=batch_size, num_workers=4, pin_memory=True)
+    loader_args = dict(batch_size=batch_size, num_workers=4, pin_memory=False)
     train_loader = DataLoader(train_set, shuffle=True, **loader_args)
     val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
 
     # Create model
-    model = resnet_unet(num_classes, pretrained=True)
+    model = UNet(n_channels=3, n_classes=num_classes)
     model.to(device=device, memory_format=torch.channels_last)
 
     # Setup optimizer
@@ -125,7 +124,7 @@ if __name__ == '__main__':
         raise f"Optimizer = {opt}, possible optimizers: adam, sgd, rmsprop."
 
     # Learning rate scheduler
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10, verbose=True, factor=0.1)
 
     grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
 
@@ -180,19 +179,12 @@ if __name__ == '__main__':
                         scheduler.step(val_score)
                         logging.info('Validation Dice score: {}'.format(val_score))
 
-        if checkpoint and epoch % 10 == 0:
+        if checkpoint and epoch % 10 == 0 or checkpoint and epoch == num_epochs:
             Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
             state_dict = model.state_dict()
+            state_dict['val_score'] = val_score
             torch.save(state_dict, str(checkpoint_dir + 'checkpoint_epoch{}.pth'.format(epoch)))
             logging.info(f'Checkpoint {epoch} saved!')
-
-    # FINE TUNE
-    model = fine_tune_model(model=model, ft_img=args.ft_img, ft_mask=args.ft_mask, mask_suff=mask_suff,
-                            val_percent=val_percent,
-                            batch_size=batch_size, device=device, amp=amp, num_epochs=num_epochs,
-                            gradient_clipping=gradient_clipping, checkpoint=checkpoint, checkpoint_dir=checkpoint_dir,
-                            loss_function=loss_function, optimizer=optimizer, grad_scaler=grad_scaler,
-                            scheduler=scheduler)
 
     # SAVE MODEL IN ONNX
     dummy_input = Variable(torch.randn(1, 3, 192, 640, device=device))

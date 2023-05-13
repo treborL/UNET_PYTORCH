@@ -1,20 +1,17 @@
 import logging
 import numpy as np
 import torch
-from PIL import Image
-from functools import lru_cache
 from functools import partial
-from itertools import repeat
 from multiprocessing import Pool
-from os import listdir
-from os.path import splitext, isfile, join
 from pathlib import Path
 from torch.utils.data import Dataset
 from tqdm import tqdm
 import albumentations as A
 import cv2 as cv
+import os
+import random
 
-transforms = A.Compose([
+train_transforms = A.Compose([
     A.PixelDropout(dropout_prob=0.02, drop_value=255),
     A.HorizontalFlip(),
     A.VerticalFlip(),
@@ -30,7 +27,7 @@ def load_image(filename):
 
 
 def unique_mask_values(idx, mask_dir, mask_suffix):
-    mask_file = list(mask_dir.glob(idx + mask_suffix + '.*'))[0]
+    mask_file = list(Path(mask_dir).glob(idx + mask_suffix + '.*'))[0]
     mask = load_image(mask_file)
     if mask.ndim == 2:
         return np.unique(mask)
@@ -41,41 +38,36 @@ def unique_mask_values(idx, mask_dir, mask_suffix):
         raise ValueError(f'Loaded masks should have 2 or 3 dimensions, found {mask.ndim}')
 
 
-class CustomDataloader(Dataset):
-    def __init__(self, images_dir: str, mask_dir: str, mask_suffix: str = '_mask'):
+def random_split(items, size):
+    sample = set(random.sample(items, size))
+    return sorted(sample), sorted(set(items) - sample)
+
+
+class CustomDataset(Dataset):
+    def __init__(self, images_dir: str, mask_dir: str, file_names: list = None, mask_suffix: str = '_mask',
+                 mask_values: list = None, is_train_set: bool = False):
+        if file_names is None:
+            raise RuntimeError('Ids list is None')
+        if mask_values is None:
+            raise RuntimeError('Mask values list is None')
+
+        self.file_names = file_names
+        self.is_train_set = is_train_set
+
         self.images_dir = Path(images_dir)
         self.mask_dir = Path(mask_dir)
         self.mask_suffix = mask_suffix
+        self.mask_values = mask_values
 
-        self.ids = [splitext(file)[0] for file in listdir(images_dir) if
-                    isfile(join(images_dir, file)) and not file.startswith('.')]
-        if not self.ids:
-            raise RuntimeError(f'No input file found in {images_dir}, make sure you put your images there')
-
-        logging.info(f'Creating dataset with {len(self.ids)} examples')
-        logging.info('Scanning mask files to determine unique values')
-
-        with Pool() as p:
-            unique = list(tqdm(
-                p.imap(partial(unique_mask_values, mask_dir=self.mask_dir, mask_suffix=self.mask_suffix), self.ids),
-                total=len(self.ids)
-            ))
-
-        self.mask_values = list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
-        logging.info(f'Unique mask values: {self.mask_values}')
+        logging.info(f'Creating dataset with {len(self.file_names)} examples')
 
     def __len__(self):
-        return len(self.ids)
+        return len(self.file_names)
 
     @staticmethod
-    def preprocess(mask_values, np_img, is_mask, scale=1):
+    def preprocess(mask_values, np_img, is_mask):
         w = np_img.shape[1]
         h = np_img.shape[0]
-
-        # newW, newH = int(scale * w), int(scale * h)
-        # assert newW > 0 and newH > 0, 'Scale is too small, resized images would have no pixel'
-        # pil_img = pil_img.resize((newW, newH), resample=Image.NEAREST if is_mask else Image.BICUBIC)
-        # img = np.asarray(pil_img)
         img = np_img
 
         if is_mask:
@@ -100,7 +92,7 @@ class CustomDataloader(Dataset):
             return img
 
     def __getitem__(self, idx):
-        name = self.ids[idx]
+        name = self.file_names[idx]
         mask_file = list(self.mask_dir.glob(name + self.mask_suffix + '.*'))
         img_file = list(self.images_dir.glob(name + '.*'))
 
@@ -113,10 +105,11 @@ class CustomDataloader(Dataset):
         assert img.size == mask.size, \
             f'Image and mask {name} should be the same size, but are {img.size} and {mask.size}'
 
-        transformed = transforms(image=img, mask=mask)
+        if self.is_train_set:
+            transformed = train_transforms(image=img, mask=mask)
 
-        img = transformed['image']
-        mask = transformed['mask']
+            img = transformed['image']
+            mask = transformed['mask']
 
         img = self.preprocess(self.mask_values, img, is_mask=False)
         mask = self.preprocess(self.mask_values, mask, is_mask=True)
@@ -125,3 +118,26 @@ class CustomDataloader(Dataset):
             'image': torch.as_tensor(img.copy()).float().contiguous(),
             'mask': torch.as_tensor(mask.copy()).long().contiguous()
         }
+
+
+def create_train_val_datasets(img_dir: str, mask_dir: str, val_percent: int = 10, mask_suf: str = ''):
+    file_names = []
+    for file in os.listdir(img_dir):
+        file_name = os.fsdecode(file)
+        file_name = file_name.split(".png")[0]
+        file_names.append(file_name)
+
+    with Pool() as p:
+        unique = list(tqdm(
+            p.imap(partial(unique_mask_values, mask_dir=mask_dir, mask_suffix=mask_suf),
+                   file_names), total=len(file_names)))
+
+    mask_values = list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
+
+    validation_count = int(len(file_names) * (val_percent / 100))
+    train_count = len(file_names) - validation_count
+
+    train_names, validation_names = random_split(file_names, train_count)
+
+    return CustomDataset(img_dir, mask_dir, train_names, mask_suf, is_train_set=True, mask_values=mask_values), \
+        CustomDataset(img_dir, mask_dir, validation_names, mask_suf, is_train_set=False, mask_values=mask_values)

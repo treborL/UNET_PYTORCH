@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torchvision.models import resnet152
+import torchvision
 
 
 def double_conv(in_channels, out_channels):
@@ -21,12 +22,13 @@ def up_conv(in_channels, out_channels):
 
 
 class DResUnet(nn.Module):
-    """Deep Unet with ResNet50, ResNet101 or ResNet152 encoder.
-    """
-
     def __init__(self, encoder, *, pretrained=False, out_channels=2):
         super().__init__()
-        self.encoder = encoder(pretrained=pretrained)
+
+        self.n_channels = 3
+        self.n_classes = out_channels
+        
+        self.encoder = encoder(weights=torchvision.models.ResNet152_Weights.DEFAULT if pretrained else None)
         self.encoder_layers = list(self.encoder.children())
 
         self.block1 = nn.Sequential(*self.encoder_layers[:3])
